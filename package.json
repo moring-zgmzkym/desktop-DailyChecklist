@@ -1,0 +1,37 @@
+{
+  "name": "xiaodida",
+  "productName": "小滴答",
+  "version": "0.4.2",
+  "description": "桌面每日提醒小程序：半透明常驻小组件 + 到点弹窗提醒",
+  "main": "src/main.js",
+  "author": "local",
+  "license": "MIT",
+  "scripts": {
+    "icons": "node scripts/gen-icons.js",
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.local.xiaodida",
+    "productName": "小滴答",
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
+  }
+}

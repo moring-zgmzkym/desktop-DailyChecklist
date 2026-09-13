@@ -1,0 +1,246 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <link rel="stylesheet" href="styles.css">
+  <title>小滴答</title>
+</head>
+<body>
+  <div id="app">
+    <header id="bar">
+      <div id="clockBox">
+        <div id="time">--:--</div>
+        <div id="date">--</div>
+      </div>
+      <div id="tools">
+        <button id="pinBtn" class="tool" title="置顶锁定：让小组件浮在所有窗口上方">📌</button>
+        <button id="settingsBtn" class="tool" title="设置">⚙️</button>
+        <button id="miniBtn" class="tool" title="迷你模式：缩成小球，点击小球恢复">🌙</button>
+        <button id="closeBtn" class="tool" title="隐藏到托盘（托盘右键可退出）">✕</button>
+      </div>
+    </header>
+
+    <div id="badgeRow">
+      <span id="doneBadge" title="今天已完成的任务次数">今日完成 0</span>
+      <span id="dndBadge" class="hidden" title="免打扰中：到点不弹窗，关闭免打扰后统一补弹">🔕</span>
+      <button id="streakBtn" title="连续打卡天数 · 点击查看最近30天">🔥 <span id="streakVal">连续0天</span></button>
+    </div>
+
+    <main id="list"></main>
+
+    <!-- 超时霸屏提醒页 -->
+    <div id="alertView" class="hidden"></div>
+
+    <div id="emptyHint" class="hidden">还没有提醒任务，三步上手：
+① 点下面「＋ 任务」，选一个模板
+② 点选时间和重复规则
+③ 到点会自动弹窗提醒你</div>
+
+    <footer id="foot">
+      <div id="footBtns">
+        <button id="addBtn" title="添加提醒任务：选模板 → 点时间 → 保存">＋ 任务</button>
+        <button id="tplBtn" title="模板管理：查看 / 新建 / 编辑 / 删除">模板</button>
+      </div>
+      <div id="pomo">
+        <svg width="20" height="20" viewBox="0 0 20 20">
+          <circle class="ringBg" cx="10" cy="10" r="8"></circle>
+          <circle id="ringFg" cx="10" cy="10" r="8"></circle>
+        </svg>
+        <span id="pomoTime" title="点击调整番茄钟时长">🍅</span>
+        <button id="pomoBtn" title="番茄钟：一键开始专注">▶</button>
+      </div>
+    </footer>
+
+    <!-- 迷你模式 -->
+    <div id="miniBox" class="hidden">
+      <div id="miniTime">--:--</div>
+      <div id="miniCount">0</div>
+      <button id="miniRestore" title="恢复完整面板">❐</button>
+    </div>
+
+    <!-- 添加/编辑任务 -->
+    <div id="taskModal" class="modal hidden">
+      <div class="modalCard">
+        <h3 id="taskModalTitle">添加提醒</h3>
+        <div class="fLabel">模板（点选，右键可删自存模板）</div>
+        <div id="tplGrid"></div>
+        <div class="fLabel">名称</div>
+        <input id="fTitle" maxlength="50" placeholder="任务名称">
+        <div class="fLabel">时间</div>
+        <div id="timeChips"></div>
+        <div class="timeRow">
+          <button class="chip" data-step="-15">−15分</button>
+          <div class="stepper" id="fHourBox">
+            <button class="stepBtn" data-k="hour" data-d="1">▲</button>
+            <input id="fHour" inputmode="numeric" maxlength="2" value="9">
+            <button class="stepBtn" data-k="hour" data-d="-1">▼</button>
+          </div>
+          <span class="timeColon">:</span>
+          <div class="stepper" id="fMinBox">
+            <button class="stepBtn" data-k="min" data-d="5">▲</button>
+            <input id="fMin" inputmode="numeric" maxlength="2" value="0">
+            <button class="stepBtn" data-k="min" data-d="-1">▼</button>
+          </div>
+          <button class="chip" data-step="15">+15分</button>
+        </div>
+        <div class="fLabel">重复</div>
+        <div id="repChips"></div>
+        <div id="repCustom" class="hidden">
+          <div id="weekdayRow"></div>
+          <div class="intervalRow">
+            每 <input id="fInterval" type="number" min="1" max="1440" placeholder="N">
+            <select id="fUnit"><option value="m">分钟</option><option value="h">小时</option></select>
+          </div>
+          <div class="intervalRow">生效
+            <input id="fWinStart" type="time" value="09:00"> –
+            <input id="fWinEnd" type="time" value="22:00">
+          </div>
+        </div>
+        <div id="dateRow" class="hidden">
+          <div class="fLabel">日期（仅一次任务在哪天提醒）</div>
+          <input id="fDate" type="date">
+        </div>
+        <label class="chk"><input id="fOverdue" type="checkbox"> 超时霸屏提醒：到点没完成就整页提醒</label>
+        <div class="modalBtns">
+          <button id="taskCancel">取消</button>
+          <button id="taskSave" class="primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设置 -->
+    <div id="setModal" class="modal hidden">
+      <div class="modalCard">
+        <h3>设置</h3>
+        <div class="setSection">
+          <div class="setHead">外观</div>
+          <div id="themeChips"></div>
+          <div class="setRow"><span class="setLbl">透明度</span><input id="opacitySlider" type="range" min="30" max="100" step="1"><span id="opacityVal"></span></div>
+        </div>
+        <div class="setSection">
+          <div class="setHead">提示音</div>
+          <div class="setRow"><span class="setLbl">提醒音</span><label class="switch"><input id="soundChk" type="checkbox"><i></i></label></div>
+          <div class="setRow"><span class="setLbl">音色</span>
+            <select id="soundPackSel">
+              <option value="windchime">风铃</option>
+              <option value="xylophone">木琴</option>
+              <option value="drop">水滴</option>
+            </select>
+          </div>
+        </div>
+        <div class="setSection">
+          <div class="setHead">提醒</div>
+          <div class="setRow"><span class="setLbl">贪睡</span>
+            <select id="snoozeSel">
+              <option value="5">5 分钟</option>
+              <option value="10">10 分钟</option>
+              <option value="15">15 分钟</option>
+              <option value="30">30 分钟</option>
+            </select>
+          </div>
+          <div class="setRow"><span class="setLbl">霸屏阈值</span>
+            <select id="overdueSel">
+              <option value="0">到点立即</option>
+              <option value="2">超时 2 分钟</option>
+              <option value="5">超时 5 分钟</option>
+              <option value="10">超时 10 分钟</option>
+              <option value="15">超时 15 分钟</option>
+              <option value="30">超时 30 分钟</option>
+            </select>
+          </div>
+          <div class="setRow"><span class="setLbl">免打扰</span><label class="switch"><input id="dndChk" type="checkbox"><i></i></label></div>
+          <div class="setHint">免打扰：到点不弹窗，关闭后统一补弹</div>
+        </div>
+        <div class="setSection">
+          <div class="setHead">番茄钟（分钟）</div>
+          <div class="setRow"><span class="setLbl">专注</span><div id="pomoFocusChips" class="chipRow"></div><input id="pomoFocus" type="number" min="1" max="180"></div>
+          <div class="setRow"><span class="setLbl">休息</span><div id="pomoBreakChips" class="chipRow"></div><input id="pomoBreak" type="number" min="1" max="60"></div>
+        </div>
+        <div class="setSection">
+          <div class="setHead">系统</div>
+          <div class="setRow"><span class="setLbl">开机自启</span><label class="switch"><input id="loginChk" type="checkbox"><i></i></label></div>
+          <div class="setRow"><button id="exportBtn">导出备份</button><button id="importBtn">导入备份</button></div>
+          <div class="setRow"><button id="quitBtn">退出应用</button></div>
+        </div>
+        <div id="aboutLine"></div>
+        <div class="modalBtns"><button id="setClose" class="primary">完成</button></div>
+      </div>
+    </div>
+
+    <!-- 模板管理 -->
+    <div id="tplModal" class="modal hidden">
+      <div class="modalCard">
+        <h3>模板管理</h3>
+        <div id="tplList"></div>
+        <div class="modalBtns">
+          <button id="tplNew" class="primary">＋ 新建模板</button>
+          <button id="tplClose">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新建/编辑模板 -->
+    <div id="tplFormModal" class="modal hidden">
+      <div class="modalCard">
+        <h3 id="tplFormTitle">新建模板</h3>
+        <div class="fLabel">名称</div>
+        <input id="ftTitle" maxlength="50" placeholder="模板名称">
+        <div class="fLabel">默认时间</div>
+        <div class="timeRow">
+          <div class="stepper" id="ftHourBox">
+            <button class="stepBtn" data-k="hour" data-d="1">▲</button>
+            <input id="ftHour" inputmode="numeric" maxlength="2" value="9">
+            <button class="stepBtn" data-k="hour" data-d="-1">▼</button>
+          </div>
+          <span class="timeColon">:</span>
+          <div class="stepper" id="ftMinBox">
+            <button class="stepBtn" data-k="min" data-d="5">▲</button>
+            <input id="ftMin" inputmode="numeric" maxlength="2" value="0">
+            <button class="stepBtn" data-k="min" data-d="-1">▼</button>
+          </div>
+        </div>
+        <div class="fLabel">默认重复</div>
+        <div id="ftRepChips"></div>
+        <div id="ftRepCustom" class="hidden">
+          <div id="ftWeekdayRow"></div>
+          <div class="intervalRow">
+            每 <input id="ftInterval" type="number" min="1" max="1440" placeholder="N">
+            <select id="ftUnit"><option value="m">分钟</option><option value="h">小时</option></select>
+          </div>
+          <div class="intervalRow">生效
+            <input id="ftWinStart" type="time" value="09:00"> –
+            <input id="ftWinEnd" type="time" value="22:00">
+          </div>
+        </div>
+        <div class="modalBtns">
+          <button id="ftCancel">取消</button>
+          <button id="ftSave" class="primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 每日打卡日历 -->
+    <div id="heatModal" class="modal hidden">
+      <div class="modalCard">
+        <h3>每日打卡</h3>
+        <div class="calHead">
+          <button id="calPrev" class="chip">‹</button>
+          <span id="calTitle"></span>
+          <button id="calNext" class="chip">›</button>
+        </div>
+        <div id="calWeek"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div id="calGrid"></div>
+        <div id="heatLegend"><span class="h0"></span><span class="h1"></span><span class="h2"></span><span class="h3"></span><span class="h4"></span> 完成越多颜色越深</div>
+        <div class="modalBtns"><button id="heatClose" class="primary">关闭</button></div>
+      </div>
+    </div>
+
+    <div id="ctxMenu" class="hidden"></div>
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <script src="audio.js"></script>
+  <script src="widget.js"></script>
+</body>
+</html>
