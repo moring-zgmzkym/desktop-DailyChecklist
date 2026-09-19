@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('api', {
   pomoStart: () => inv('pomo:start'),
   pomoControl: (action) => inv('pomo:control', { action }),
 
+  pickMusicFolder: () => inv('music:pickFolder'),
+  musicList: () => inv('music:list'),
+
   reminderAction: (key, action, minutes) => inv('reminder:action', { key, action, minutes }),
 
   exportData: () => inv('data:export'),

@@ -2,6 +2,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, powerMonitor, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { Store, sanitizeTask, sanitizeRepeat, TIME_RE, isDateStr } = require('./store');
 const { createLogger } = require('./logger');
 const S = require('./schedule');
@@ -163,6 +164,7 @@ function bootstrap() {
     if (!dnd) {
       for (const t of st.data.tasks) {
         if (!t.enabled) continue;
+        if (t.overdueAlert) continue; // 霸屏任务：不弹窗不发通知，只由小组件霸屏页承担
         for (const occ of S.occurrencesForDate(t, now)) {
           if (occ !== cur) continue;
           fireReminder({ key: S.occKey(t.id, dk, occ), occKey: S.occKey(t.id, dk, occ), taskId: t.id, title: t.title, timeLabel: occ, type: 'task' });
@@ -172,7 +174,11 @@ function bootstrap() {
         const s = scheduled[i];
         if (s.at <= Date.now()) {
           scheduled.splice(i, 1);
-          fireReminder({ key: s.key, occKey: s.occKey, taskId: s.taskId, title: s.title, timeLabel: '稍后', type: 'task' });
+          const tsk = st.data.tasks.find((x) => x.id === s.taskId);
+          if (!tsk || !tsk.enabled) continue; // 任务已删除/停用：丢弃贪睡
+          if (!tsk.overdueAlert) {
+            fireReminder({ key: s.key, occKey: s.occKey, taskId: s.taskId, title: s.title, timeLabel: '稍后', type: 'task' });
+          } // 霸屏任务贪睡到期：不弹窗，霸屏页由本 tick 末尾的广播恢复
         }
       }
     }
@@ -189,8 +195,30 @@ function bootstrap() {
         });
       }
     }
-    // 霸屏阈值跨越依赖周期性刷新：存在开启霸屏的启用任务时随心跳广播
-    if (!dnd && st.data.tasks.some((t) => t.enabled && t.overdueAlert)) broadcast();
+    // 霸屏阈值跨越依赖周期性刷新：存在开启霸屏的启用任务时随心跳广播；
+    // 组件隐藏（✕/托盘）时按 任务+日期+时刻 边沿触发一条系统通知兜底
+    if (!dnd && st.data.tasks.some((t) => t.enabled && t.overdueAlert)) {
+      broadcast();
+      notifyOverdueIfHidden(dk);
+    }
+  }
+
+  const notifiedOverdue = new Set();
+  function notifyOverdueIfHidden(dk) {
+    if (widget && !widget.isDestroyed() && widget.isVisible()) return;
+    for (const k of notifiedOverdue) {
+      if (k.split('|')[1] !== dk) notifiedOverdue.delete(k); // 清理过期日期的去重记录
+    }
+    for (const t of viewModel().tasks.filter((x) => x.overdue)) {
+      const key = `${t.id}|${dk}|${t.occ}`;
+      if (notifiedOverdue.has(key)) continue;
+      notifiedOverdue.add(key);
+      if (Notification.isSupported()) {
+        const n = new Notification({ title: '小滴答 · 超时未完成', body: `${t.title}（计划 ${t.occ}）` });
+        n.on('click', () => showWidget());
+        n.show();
+      }
+    }
   }
 
   // 唤醒/启动后补弹今天错过的（策划书 3.3 / 4）；免打扰中跳过，关闭时统一补弹
@@ -201,6 +229,7 @@ function bootstrap() {
     const cur = S.hhmm(now);
     for (const t of st.data.tasks) {
       if (!t.enabled) continue;
+      if (t.overdueAlert) continue; // 霸屏任务由心跳广播接管，不补弹
       for (const occ of S.occurrencesForDate(t, now)) {
         if (occ >= cur) continue;
         const key = S.occKey(t.id, dk, occ);
@@ -221,6 +250,21 @@ function bootstrap() {
     broadcast();
   }
 
+  // ---------- 本地音乐 ----------
+
+  const AUDIO_EXT = ['.mp3', '.flac', '.wav', '.m4a', '.ogg'];
+  function scanMusic(folder) {
+    const tracks = [];
+    for (const e of fs.readdirSync(folder, { withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      if (!AUDIO_EXT.includes(path.extname(e.name).toLowerCase())) continue;
+      tracks.push({ name: e.name.replace(/\.[^.]+$/, ''), url: pathToFileURL(path.join(folder, e.name)).href });
+      if (tracks.length >= 500) break;
+    }
+    tracks.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    return tracks;
+  }
+
   // ---------- 视图模型（渲染层零业务逻辑） ----------
 
   function viewModel() {
@@ -234,11 +278,13 @@ function bootstrap() {
       const key = occ ? S.occKey(t.id, dk, occ) : null;
       const handledState = key && st.data.handled[key] ? st.data.handled[key] : null;
       const state = handledState || 'pending';
-      // 超时霸屏：开关开 + 已到点未处理 + 超时时长达阈值 + 非免打扰 + 不在贪睡排程中
+      // 超时霸屏：开关开 + 已到点未处理 + 超时时长达阈值 + 非免打扰 + 不在贪睡排程中 + 当天尚未完成过
       let minutesLate = 0;
       if (occ && occ <= cur) minutesLate = Math.round((Date.now() - todayAtMs(occ)) / 60000);
+      const doneToday = Object.keys(st.data.handled).some((k) => k.startsWith(t.id + '|' + dk) && st.data.handled[k] === 'done');
       const overdue = !!(t.enabled && t.overdueAlert && occ && occ <= cur && !handledState && !dnd
         && minutesLate >= threshold
+        && !doneToday
         && !scheduled.some((s) => s.occKey === key));
       return {
         id: t.id, title: t.title, enabled: t.enabled, time: t.time, date: t.date || null,
@@ -594,6 +640,10 @@ function bootstrap() {
         app.setLoginItemSettings({ openAtLogin: s.launchAtLogin });
       }
       if (patch.dndMode !== undefined) applyDnd(!!patch.dndMode);
+      if (patch.musicFolder !== undefined) {
+        if (patch.musicFolder !== '') throw new Error('音乐文件夹请通过「选择文件夹」设置');
+        s.musicFolder = '';
+      }
       st.scheduleSave();
       broadcast();
     }));
@@ -713,6 +763,33 @@ function bootstrap() {
     }));
 
     ipcMain.handle('reminder:action', wrap((payload) => reminderAction(payload)));
+
+    ipcMain.handle('music:pickFolder', wrap(async () => {
+      const res = await dialog.showOpenDialog(widget, { properties: ['openDirectory'] });
+      if (res.canceled || !res.filePaths.length) return { ok: false, error: '已取消' };
+      const folder = res.filePaths[0];
+      let tracks;
+      try {
+        tracks = scanMusic(folder);
+      } catch (e) {
+        return { ok: false, error: '文件夹无法读取' };
+      }
+      if (!tracks.length) return { ok: false, error: '文件夹里没有音频文件' };
+      st.data.settings.musicFolder = folder;
+      st.scheduleSave();
+      broadcast();
+      return { ok: true, tracks };
+    }));
+
+    ipcMain.handle('music:list', wrap(() => {
+      const folder = st.data.settings.musicFolder;
+      if (!folder) return { ok: false, error: '未设置音乐文件夹' };
+      try {
+        return { ok: true, tracks: scanMusic(folder) };
+      } catch (e) {
+        return { ok: false, error: '音乐文件夹无法读取' };
+      }
+    }));
 
     ipcMain.handle('data:export', wrap(async () => {
       const res = await dialog.showSaveDialog(widget, {

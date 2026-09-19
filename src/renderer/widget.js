@@ -202,6 +202,7 @@
     if (!state) return;
     const list = state.tasks.filter((t) => t.overdue);
     const show = list.length > 0;
+    const had = !!alertKey;
     $('alertView').classList.toggle('hidden', !show);
     $('list').classList.toggle('hidden', show);
     $('badgeRow').classList.toggle('hidden', show);
@@ -217,6 +218,7 @@
       document.querySelectorAll('.modal').forEach((m) => m.classList.add('hidden'));
       box.textContent = '';
       for (const t of list) box.appendChild(buildAlertCard(t));
+      if (!had) SoundKit.play('remind', state.settings.soundPack, state.settings.sound); // 仅「无→有」边沿响一声
     } else {
       for (const t of list) {
         const sub = box.querySelector(`[data-id="${t.id}"] .aSub`);
@@ -507,6 +509,7 @@
     $('loginChk').checked = s.launchAtLogin;
     $('dndChk').checked = !!s.dndMode;
     $('overdueSel').value = String(s.overdueMinutes || 0);
+    $('musicHint').textContent = s.musicFolder ? `已选择文件夹 · ${tracks.length} 首` : '未设置 · 支持 mp3 / flac / wav / m4a / ogg';
     renderPomoChips();
     $('aboutLine').textContent = `小滴答 v${state.version} · 纯本地应用，数据不出你的电脑`;
     $('setModal').classList.remove('hidden');
@@ -577,6 +580,14 @@
     $('importBtn').addEventListener('click', async () => {
       const r = await api.importData();
       toast(r.ok ? '导入成功' : r.error);
+    });
+    $('musicPickBtn').addEventListener('click', async () => {
+      const r = await api.pickMusicFolder();
+      toast(r.ok ? `已加载 ${r.tracks.length} 首曲目` : r.error);
+    });
+    $('musicClearBtn').addEventListener('click', async () => {
+      const r = await saveSettings({ musicFolder: '' });
+      if (r.ok) { clearMusicUI(); toast('已清除音乐文件夹'); }
     });
     $('setClose').addEventListener('click', () => $('setModal').classList.add('hidden'));
   }
@@ -806,6 +817,67 @@
     }
   }
 
+  // ---------- 本地音乐（播放列表来自主进程扫描，控制纯渲染层） ----------
+  let tracks = [];
+  let trackIdx = 0;
+  const audio = new Audio();
+
+  function clearMusicUI() {
+    tracks = [];
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    $('mTrackName').textContent = '—';
+    $('mSeek').value = 0;
+    $('mPlay').textContent = '▶';
+    $('musicBar').classList.add('hidden');
+  }
+
+  function applyTracks(list) {
+    tracks = list || [];
+    trackIdx = 0;
+    $('musicBar').classList.toggle('hidden', !tracks.length);
+    if (tracks.length) {
+      audio.src = tracks[0].url;
+      $('mTrackName').textContent = tracks[0].name;
+    }
+  }
+
+  async function loadMusicList() {
+    const r = await api.musicList();
+    if (!r.ok) {
+      clearMusicUI();
+      if (state && state.settings.musicFolder) toast('音乐文件夹无法读取，已停用音乐栏');
+      return;
+    }
+    applyTracks(r.tracks);
+  }
+
+  function bindMusic() {
+    const playAt = (i) => {
+      if (!tracks.length) return;
+      trackIdx = (i + tracks.length) % tracks.length;
+      audio.src = tracks[trackIdx].url;
+      $('mTrackName').textContent = tracks[trackIdx].name;
+      audio.play();
+      $('mPlay').textContent = '⏸';
+    };
+    $('mPlay').addEventListener('click', () => {
+      if (!tracks.length) return;
+      if (audio.paused) { audio.play(); $('mPlay').textContent = '⏸'; }
+      else { audio.pause(); $('mPlay').textContent = '▶'; }
+    });
+    $('mNext').addEventListener('click', () => playAt(trackIdx + 1));
+    $('mPrev').addEventListener('click', () => playAt(trackIdx - 1));
+    audio.addEventListener('ended', () => playAt(trackIdx + 1));
+    audio.addEventListener('timeupdate', () => {
+      if (audio.duration) $('mSeek').value = Math.round(audio.currentTime / audio.duration * 1000);
+    });
+    $('mSeek').addEventListener('input', () => {
+      if (audio.duration) audio.currentTime = Number($('mSeek').value) / 1000 * audio.duration;
+    });
+  }
+
   // ---------- 主循环 ----------
   function renderAll() {
     applyVisualSettings();
@@ -817,16 +889,24 @@
     state = await api.getState();
     if (state.recovered && state.recovered.fatal) toast('数据文件损坏且无法恢复，已从空数据开始');
     else if (state.recovered) toast('检测到数据损坏，已从备份恢复');
+    let knownFolder = null;
     api.onState((s) => {
       state = s;
       renderAll();
       if (!$('heatModal').classList.contains('hidden')) renderCalendar();
+      // 音乐文件夹变更（选择/清除/导入备份）时刷新列表
+      if (s.settings.musicFolder !== knownFolder) {
+        knownFolder = s.settings.musicFolder;
+        if (knownFolder) loadMusicList();
+        else clearMusicUI();
+      }
     });
     api.onMini(setMiniClass);
     renderAll();
     tickClock();
     setInterval(tickClock, 1000);
     renderTimeChips();
+    if (state.settings.musicFolder) { knownFolder = state.settings.musicFolder; loadMusicList(); }
 
     // 事件绑定
     $('pinBtn').addEventListener('click', () => api.setPinned(!state.settings.pinned));
@@ -861,6 +941,7 @@
     $('calPrev').addEventListener('click', () => { calOffset -= 1; renderCalendar(); });
     $('calNext').addEventListener('click', () => { calOffset += 1; renderCalendar(); });
     bindSettings();
+    bindMusic();
     createResizeHandles();
   }
 

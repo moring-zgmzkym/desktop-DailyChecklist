@@ -204,5 +204,20 @@ ok('overdueMinutes 仅接受合法档位', () => {
   assert.equal(st4.data.settings.overdueMinutes, 0); // 非法值被清洗回默认
 });
 
+ok('musicFolder 持久化与清洗', () => {
+  const st2 = new Store(dir, log);
+  st2.load();
+  st2.data.settings.musicFolder = 'D:/Music';
+  st2.saveNow();
+  const st3 = new Store(dir, log);
+  st3.load();
+  assert.equal(st3.data.settings.musicFolder, 'D:/Music');
+  st3.data.settings.musicFolder = 'x'.repeat(501);
+  st3.saveNow();
+  const st4 = new Store(dir, log);
+  st4.load();
+  assert.equal(st4.data.settings.musicFolder, ''); // 超长被清洗回默认
+});
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(passed + ' passed' + (process.exitCode ? '（有失败）' : ''));

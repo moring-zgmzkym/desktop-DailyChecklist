@@ -215,7 +215,7 @@ body {
 #app.mini { padding: 0; border-radius: 50%; justify-content: center; align-items: center; }
 #app.mini #bar, #app.mini #badgeRow, #app.mini #list, #app.mini #emptyHint,
 #app.mini #foot, #app.mini #toast, #app.mini .modal, #app.mini #ctxMenu,
-#app.mini #alertView { display: none !important; }
+#app.mini #alertView, #app.mini #musicBar { display: none !important; }
 #app.mini #miniBox { display: block !important; text-align: center; position: relative; -webkit-app-region: drag; }
 #miniRestore {
   position: absolute; top: 3px; right: 3px;
@@ -440,3 +440,14 @@ input:focus, select:focus { border-color: var(--accent); }
 }
 .rbtns button:hover { transform: translateY(-1px); }
 .rbtns .primary { background: var(--accent); color: #fff; }
+
+/* ============ 迷你音乐栏 ============ */
+#musicBar {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; position: relative; z-index: 55;
+  background: rgba(255, 255, 255, 0.5); border-radius: 999px; padding: 6px 12px;
+}
+#mTrackName { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mSeek { width: 76px; accent-color: var(--accent); }
+#mBtns { display: flex; gap: 2px; }
+#musicBar .tool { width: 24px; height: 24px; font-size: 11px; }

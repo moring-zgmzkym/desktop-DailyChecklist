@@ -22,6 +22,7 @@ function defaults() {
       snoozeMinutes: 5,
       dndMode: false,
       overdueMinutes: 0,
+      musicFolder: '',
       templatesSeeded: false,
       pomodoro: { focus: 25, break: 5 },
     },
@@ -109,6 +110,7 @@ function sanitize(data) {
   if (typeof s.launchAtLogin === 'boolean') d.settings.launchAtLogin = s.launchAtLogin;
   if (typeof s.dndMode === 'boolean') d.settings.dndMode = s.dndMode;
   if ([0, 2, 5, 10, 15, 30].includes(s.overdueMinutes)) d.settings.overdueMinutes = s.overdueMinutes;
+  if (typeof s.musicFolder === 'string' && s.musicFolder.length <= 500) d.settings.musicFolder = s.musicFolder;
   if (typeof s.templatesSeeded === 'boolean') d.settings.templatesSeeded = s.templatesSeeded;
   if ([5, 10, 15, 30].includes(s.snoozeMinutes)) d.settings.snoozeMinutes = s.snoozeMinutes;
   if (s.pomodoro && Number.isInteger(s.pomodoro.focus) && Number.isInteger(s.pomodoro.break) &&
