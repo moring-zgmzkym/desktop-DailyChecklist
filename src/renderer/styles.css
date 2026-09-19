@@ -1,5 +1,6 @@
-/* ============ 主题（活泼 / 沉稳 / 安静）============ */
-#app[data-theme='lively'] {
+/* ============ 主题（活泼 / 沉稳 / 安静）============
+   用属性选择器同时覆盖小组件 #app 与提醒小窗 #rapp（两者都有 data-theme） */
+[data-theme='lively'] {
   --bg-rgb: 255 243 236;
   --text: #4a2b1f;
   --sub: #a3765f;
@@ -11,7 +12,7 @@
   --ease: cubic-bezier(0.34, 1.56, 0.64, 1);
   --speed: 0.25s;
 }
-#app[data-theme='steady'] {
+[data-theme='steady'] {
   --bg-rgb: 234 239 243;
   --text: #22303c;
   --sub: #6b7c8a;
@@ -23,7 +24,7 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --speed: 0.2s;
 }
-#app[data-theme='quiet'] {
+[data-theme='quiet'] {
   --bg-rgb: 243 246 245;
   --text: #4a5450;
   --sub: #93a09a;
@@ -441,7 +442,7 @@ input:focus, select:focus { border-color: var(--accent); }
 .rbtns button:hover { transform: translateY(-1px); }
 .rbtns .primary { background: var(--accent); color: #fff; }
 
-/* ============ 迷你音乐栏 ============ */
+/* ============ 常驻音乐栏 ============ */
 #musicBar {
   display: flex; align-items: center; gap: 8px;
   margin-top: 8px; position: relative; z-index: 55;
@@ -451,3 +452,10 @@ input:focus, select:focus { border-color: var(--accent); }
 #mSeek { width: 76px; accent-color: var(--accent); }
 #mBtns { display: flex; gap: 2px; }
 #musicBar .tool { width: 24px; height: 24px; font-size: 11px; }
+#mHint { flex: 1; text-align: center; font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#musicBar[data-state='empty'] { cursor: pointer; }
+#musicBar[data-state='empty']:hover { background: rgba(255, 255, 255, 0.82); }
+#musicBar[data-state='empty'] #mTrackName,
+#musicBar[data-state='empty'] #mSeek,
+#musicBar[data-state='empty'] #mBtns,
+#musicBar[data-state='ready'] #mHint { display: none; }

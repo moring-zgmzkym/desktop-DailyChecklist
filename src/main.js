@@ -178,7 +178,9 @@ function bootstrap() {
           if (!tsk || !tsk.enabled) continue; // 任务已删除/停用：丢弃贪睡
           if (!tsk.overdueAlert) {
             fireReminder({ key: s.key, occKey: s.occKey, taskId: s.taskId, title: s.title, timeLabel: '稍后', type: 'task' });
-          } // 霸屏任务贪睡到期：不弹窗，霸屏页由本 tick 末尾的广播恢复
+          } else {
+            notifiedOverdue.delete(s.occKey); // 霸屏任务贪睡到期：不弹窗，清去重标记让组件重新自动弹出
+          }
         }
       }
     }
@@ -196,28 +198,33 @@ function bootstrap() {
       }
     }
     // 霸屏阈值跨越依赖周期性刷新：存在开启霸屏的启用任务时随心跳广播；
-    // 组件隐藏（✕/托盘）时按 任务+日期+时刻 边沿触发一条系统通知兜底
+    // 组件隐藏（✕/托盘）或迷你时，按 任务+日期+时刻 边沿自动弹出组件展示霸屏页
     if (!dnd && st.data.tasks.some((t) => t.enabled && t.overdueAlert)) {
       broadcast();
-      notifyOverdueIfHidden(dk);
+      autoShowOverdue(dk);
     }
   }
 
   const notifiedOverdue = new Set();
-  function notifyOverdueIfHidden(dk) {
-    if (widget && !widget.isDestroyed() && widget.isVisible()) return;
+  // 霸屏任务超时且组件看不见（隐藏/迷你）时，自动弹出组件展示霸屏页；
+  // 每个 任务+日期+时刻 只自动弹一次，手动关闭后不再骚扰，新的超时事件才会再次弹出
+  function autoShowOverdue(dk) {
+    if (!widget || widget.isDestroyed() || !widget.isVisible() || miniMode) {
+      let needShow = false;
+      for (const t of viewModel().tasks.filter((x) => x.overdue)) {
+        const key = `${t.id}|${dk}|${t.occ}`;
+        if (notifiedOverdue.has(key)) continue;
+        notifiedOverdue.add(key);
+        needShow = true;
+      }
+      if (needShow) {
+        if (miniMode) setMiniMode(false); // 内部有销毁守卫
+        if (!widget || widget.isDestroyed()) showWidget(); // 自带重建
+        else if (!widget.isVisible()) widget.show(); // 迷你还原不负责显示，隐藏态（含迷你中被托盘隐藏）必须补 show
+      }
+    }
     for (const k of notifiedOverdue) {
       if (k.split('|')[1] !== dk) notifiedOverdue.delete(k); // 清理过期日期的去重记录
-    }
-    for (const t of viewModel().tasks.filter((x) => x.overdue)) {
-      const key = `${t.id}|${dk}|${t.occ}`;
-      if (notifiedOverdue.has(key)) continue;
-      notifiedOverdue.add(key);
-      if (Notification.isSupported()) {
-        const n = new Notification({ title: '小滴答 · 超时未完成', body: `${t.title}（计划 ${t.occ}）` });
-        n.on('click', () => showWidget());
-        n.show();
-      }
     }
   }
 
@@ -367,6 +374,28 @@ function bootstrap() {
     widget.show();
   }
 
+  // 迷你/完整切换（IPC 与超时自动弹出共用）：先置 miniMode 再改尺寸，避免球尺寸覆盖记忆位置
+  function setMiniMode(v) {
+    miniMode = !!v;
+    if (!widget || widget.isDestroyed()) return;
+    if (miniMode) {
+      savedBounds = widget.getBounds();
+      widget.setMinimumSize(76, 76);
+      widget.setBounds({ width: 76, height: 76 });
+    } else {
+      // 原地展开：保留小球位置，只恢复宽高，并完整钳制进最近的可视区
+      const cur = widget.getBounds();
+      const wa = nearestWorkArea(cur);
+      const w = savedBounds ? savedBounds.width : 300;
+      const h = savedBounds ? savedBounds.height : 460;
+      const X = Math.min(Math.max(cur.x, wa.x), Math.max(wa.x, wa.x + wa.width - w));
+      const Y = Math.min(Math.max(cur.y, wa.y), Math.max(wa.y, wa.y + wa.height - h));
+      widget.setMinimumSize(260, 360);
+      widget.setBounds({ x: X, y: Y, width: w, height: h });
+    }
+    widget.webContents.send('mini', miniMode);
+  }
+
   function createReminderWin() {
     reminderReady = false;
     reminderWin = new BrowserWindow({
@@ -478,6 +507,7 @@ function bootstrap() {
       if (inp.date < S.dateStr(new Date())) throw new Error('日期不能早于今天');
       out.date = inp.date;
     }
+    if (inp.overdueAlert) out.overdueAlert = true;
     return out;
   }
 
@@ -707,25 +737,7 @@ function bootstrap() {
       app.quit();
     }));
 
-    ipcMain.handle('win:mini', wrap((v) => {
-      miniMode = !!v;
-      if (miniMode) {
-        savedBounds = widget.getBounds();
-        widget.setMinimumSize(76, 76);
-        widget.setBounds({ width: 76, height: 76 });
-      } else {
-        // 原地展开：保留小球位置，只恢复宽高，并完整钳制进最近的可视区
-        const cur = widget.getBounds();
-        const wa = nearestWorkArea(cur);
-        const w = savedBounds ? savedBounds.width : 300;
-        const h = savedBounds ? savedBounds.height : 460;
-        const X = Math.min(Math.max(cur.x, wa.x), Math.max(wa.x, wa.x + wa.width - w));
-        const Y = Math.min(Math.max(cur.y, wa.y), Math.max(wa.y, wa.y + wa.height - h));
-        widget.setMinimumSize(260, 360);
-        widget.setBounds({ x: X, y: Y, width: w, height: h });
-      }
-      if (widget && !widget.isDestroyed()) widget.webContents.send('mini', miniMode);
-    }));
+    ipcMain.handle('win:mini', wrap((v) => { setMiniMode(v); }));
 
     ipcMain.handle('win:resize', wrap(({ phase, edge, dx, dy }) => {
       if (miniMode) return;

@@ -208,6 +208,7 @@
     $('badgeRow').classList.toggle('hidden', show);
     $('foot').classList.toggle('hidden', show);
     $('bar').classList.toggle('hidden', show);
+    $('musicBar').classList.toggle('hidden', show);
     $('emptyHint').classList.toggle('hidden', show || state.tasks.length > 0);
     if (!show) { alertKey = null; return; }
     const key = list.map((t) => t.id).join(',');
@@ -830,13 +831,13 @@
     $('mTrackName').textContent = '—';
     $('mSeek').value = 0;
     $('mPlay').textContent = '▶';
-    $('musicBar').classList.add('hidden');
+    $('musicBar').dataset.state = 'empty';
   }
 
   function applyTracks(list) {
     tracks = list || [];
     trackIdx = 0;
-    $('musicBar').classList.toggle('hidden', !tracks.length);
+    $('musicBar').dataset.state = tracks.length ? 'ready' : 'empty';
     if (tracks.length) {
       audio.src = tracks[0].url;
       $('mTrackName').textContent = tracks[0].name;
@@ -854,6 +855,13 @@
   }
 
   function bindMusic() {
+    // 未设置音乐文件夹：整条可点，直达设置的音乐分区（瞬时滚动，被遮挡/节流时也可靠）
+    $('musicBar').addEventListener('click', () => {
+      if ($('musicBar').dataset.state !== 'empty') return;
+      openSettings();
+      const sec = $('musicSection');
+      if (sec) sec.scrollIntoView({ block: 'center' });
+    });
     const playAt = (i) => {
       if (!tracks.length) return;
       trackIdx = (i + tracks.length) % tracks.length;

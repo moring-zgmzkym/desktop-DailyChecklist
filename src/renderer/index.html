@@ -37,8 +37,9 @@
 ② 点选时间和重复规则
 ③ 到点会自动弹窗提醒你</div>
 
-    <!-- 迷你音乐栏（配置本地音乐文件夹后显示） -->
-    <div id="musicBar" class="hidden">
+    <!-- 常驻音乐栏（data-state：empty=未设置文件夹，点击去设置；ready=可播放） -->
+    <div id="musicBar" data-state="empty">
+      <span id="mHint">🎵 未设置音乐 · 点击选择文件夹</span>
       <span id="mTrackName">—</span>
       <input id="mSeek" type="range" min="0" max="1000" value="0">
       <div id="mBtns">
@@ -168,7 +169,7 @@
           <div class="setRow"><span class="setLbl">专注</span><div id="pomoFocusChips" class="chipRow"></div><input id="pomoFocus" type="number" min="1" max="180"></div>
           <div class="setRow"><span class="setLbl">休息</span><div id="pomoBreakChips" class="chipRow"></div><input id="pomoBreak" type="number" min="1" max="60"></div>
         </div>
-        <div class="setSection">
+        <div class="setSection" id="musicSection">
           <div class="setHead">音乐</div>
           <div class="setRow"><button id="musicPickBtn">选择音乐文件夹</button><button id="musicClearBtn">清除</button></div>
           <div class="setHint" id="musicHint">未设置 · 支持 mp3 / flac / wav / m4a / ogg</div>
