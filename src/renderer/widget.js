@@ -27,7 +27,7 @@
     }
     el.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.add('hidden'), actionLabel ? 5000 : 2200);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), actionLabel ? 4800 : 2200); // 4800：留出主进程 5s 撤销时限的余量
   }
   const pad = (n) => String(n).padStart(2, '0');
   const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
@@ -806,6 +806,7 @@
         const up = () => {
           h.removeEventListener('pointermove', move);
           h.removeEventListener('pointerup', up);
+          h.removeEventListener('pointercancel', up);
           if (raf) { cancelAnimationFrame(raf); raf = 0; }
           if (latest) api.resizeMove(edge, latest[0], latest[1]);
           latest = null;
@@ -813,6 +814,7 @@
         };
         h.addEventListener('pointermove', move);
         h.addEventListener('pointerup', up);
+        h.addEventListener('pointercancel', up); // 系统打断拖拽（触屏手势/IME 等）时也要收尾，防止主进程 resizeDrag 残留
       });
       app.appendChild(h);
     }
@@ -831,6 +833,7 @@
     $('mTrackName').textContent = '—';
     $('mSeek').value = 0;
     $('mPlay').textContent = '▶';
+    $('mHint').textContent = (state && state.settings.musicFolder) ? '⚠️ 音乐文件夹无法读取 · 点击重新选择' : '🎵 未设置音乐 · 点击选择文件夹';
     $('musicBar').dataset.state = 'empty';
   }
 
@@ -838,9 +841,12 @@
     tracks = list || [];
     trackIdx = 0;
     $('musicBar').dataset.state = tracks.length ? 'ready' : 'empty';
+    $('mPlay').textContent = '▶'; // 换列表即复位为暂停态，与 audio 实际状态一致
     if (tracks.length) {
       audio.src = tracks[0].url;
       $('mTrackName').textContent = tracks[0].name;
+    } else {
+      $('mHint').textContent = (state && state.settings.musicFolder) ? '文件夹里没有音频文件 · 点击重新选择' : '🎵 未设置音乐 · 点击选择文件夹';
     }
   }
 
@@ -884,6 +890,19 @@
     $('mSeek').addEventListener('input', () => {
       if (audio.duration) audio.currentTime = Number($('mSeek').value) / 1000 * audio.duration;
     });
+    // 坏曲目自动跳下一首；连续失败达到曲目数则停止，避免死循环
+    let errStreak = 0;
+    audio.addEventListener('playing', () => { errStreak = 0; });
+    audio.addEventListener('error', () => {
+      if (!tracks.length) return;
+      if (++errStreak >= tracks.length) {
+        errStreak = 0;
+        $('mPlay').textContent = '▶';
+        toast('音频无法播放，已停止');
+        return;
+      }
+      playAt(trackIdx + 1);
+    });
   }
 
   // ---------- 主循环 ----------
@@ -897,9 +916,11 @@
     state = await api.getState();
     if (state.recovered && state.recovered.fatal) toast('数据文件损坏且无法恢复，已从空数据开始');
     else if (state.recovered) toast('检测到数据损坏，已从备份恢复');
+    setMiniClass(!!state.mini); // 崩溃重载后以主进程状态恢复迷你/完整态
     let knownFolder = null;
     api.onState((s) => {
       state = s;
+      setMiniClass(!!s.mini); // 与 'mini' 事件双保险，幂等
       renderAll();
       if (!$('heatModal').classList.contains('hidden')) renderCalendar();
       // 音乐文件夹变更（选择/清除/导入备份）时刷新列表

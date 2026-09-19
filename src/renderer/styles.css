@@ -130,11 +130,16 @@ body {
 #alertView {
   position: absolute; inset: 0; z-index: 55;
   display: flex; flex-direction: column; gap: 10px;
-  justify-content: center; padding: 20px 18px;
+  justify-content: flex-start; padding: 20px 18px;
+  overflow-y: auto;
   border-radius: var(--radius);
   background: rgb(var(--bg-rgb) / 0.99);
   animation: sheetUp 0.3s var(--ease);
 }
+/* 安全居中：伪元素弹性撑住空白，单卡居中、多卡溢出时可滚动不裁顶 */
+#alertView::before, #alertView::after { content: ''; margin: auto; }
+#alertView::-webkit-scrollbar { width: 4px; }
+#alertView::-webkit-scrollbar-thumb { background: var(--accent-soft); border-radius: 2px; }
 .alertCard {
   background: rgba(255, 255, 255, 0.75);
   border: 2px solid var(--danger);
@@ -250,13 +255,13 @@ body {
 @keyframes sheetUp { 0% { transform: translateY(35%); opacity: 0.3; } 100% { transform: translateY(0); opacity: 1; } }
 .modalCard h3 { font-size: 15px; margin-bottom: 8px; }
 .fLabel { font-size: 11px; color: var(--sub); margin: 8px 0 4px; }
-input[type='text'], input:not([type]), input[type='time'], input[type='number'], select {
+input[type='text'], input:not([type]), input[type='time'], input[type='number'], input[type='date'], select {
   width: 100%; border: 1.5px solid var(--accent-soft); border-radius: 8px;
   padding: 6px 8px; font-size: 13px; color: var(--text);
   background: rgba(255, 255, 255, 0.7); outline: none; font-family: inherit;
+  user-select: text;
 }
 input:focus, select:focus { border-color: var(--accent); }
-#fTitle { user-select: text; }
 #tplGrid, #timeChips, #repChips, #themeChips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip {
   border: 1.5px solid var(--accent-soft); background: rgba(255, 255, 255, 0.6);

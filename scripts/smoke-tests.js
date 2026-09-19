@@ -117,6 +117,16 @@ ok('保存后可重新加载；.bak 轮换生效', () => {
   assert.equal(st2.data.tasks.length, 2);
 });
 
+ok('损坏的主文件不会被轮换进 .bak（保住好备份）', () => {
+  fs.writeFileSync(path.join(dir, 'data.json'), '{corrupted!!');
+  const st = new Store(dir, log);
+  st.load(); // 从 .bak 恢复（1 任务）
+  st.data.tasks.push(sanitizeTask({ id: 't9', title: '吃药', time: '08:00', repeat: { type: 'daily' } }));
+  st.saveNow(); // 此时主文件是坏的：不应顶掉 .bak
+  const bak = JSON.parse(fs.readFileSync(path.join(dir, 'data.json.bak'), 'utf8'));
+  assert.equal(bak.tasks.length, 1); // .bak 仍是第一版
+});
+
 ok('主文件损坏时从 .bak 恢复', () => {
   fs.writeFileSync(path.join(dir, 'data.json'), '{broken json!!!');
   const st = new Store(dir, log);

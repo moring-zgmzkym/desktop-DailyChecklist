@@ -98,12 +98,28 @@ function bootstrap() {
     showReminderWindow();
   }
 
+  // 该时刻的所有贪睡排程一并取消（完成/跳过后不再「稍后」重弹）
+  function dropScheduledByOcc(occKey) {
+    for (let i = scheduled.length - 1; i >= 0; i--) {
+      if (scheduled[i].occKey === occKey) scheduled.splice(i, 1);
+    }
+  }
+
   function reminderAction(payload) {
     const { key, action } = payload;
     const idx = pending.findIndex((p) => p.key === key);
     if (idx < 0) return { ok: false, error: '该提醒已处理' };
     const item = pending[idx];
-    pending.splice(idx, 1);
+    if (item.type !== 'task' && ['done', 'skip', 'snooze'].includes(action)) {
+      return { ok: false, error: '该类型不支持此操作' };
+    }
+    if (action === 'done' || action === 'skip') {
+      // 同一时刻可能同时存在多张贪睡卡：按 occKey 全部移除，并清掉该时刻的贪睡排程
+      pending = pending.filter((p) => p.occKey !== item.occKey);
+      dropScheduledByOcc(item.occKey);
+    } else {
+      pending.splice(idx, 1);
+    }
     if (action === 'done') {
       completeOccurrence(item.occKey, item.taskId);
     } else if (action === 'skip') {
@@ -125,8 +141,6 @@ function bootstrap() {
     broadcast();
     return { ok: true };
   }
-
-  const taskIdSafe = (id) => id;
 
   function todayAtMs(hm) {
     const [h, m] = hm.split(':').map(Number);
@@ -167,6 +181,7 @@ function bootstrap() {
         if (t.overdueAlert) continue; // 霸屏任务：不弹窗不发通知，只由小组件霸屏页承担
         for (const occ of S.occurrencesForDate(t, now)) {
           if (occ !== cur) continue;
+          if (st.data.handled[S.occKey(t.id, dk, occ)]) continue; // 该时刻已完成/已跳过（含提前标记）：不再弹窗
           fireReminder({ key: S.occKey(t.id, dk, occ), occKey: S.occKey(t.id, dk, occ), taskId: t.id, title: t.title, timeLabel: occ, type: 'task' });
         }
       }
@@ -176,6 +191,7 @@ function bootstrap() {
           scheduled.splice(i, 1);
           const tsk = st.data.tasks.find((x) => x.id === s.taskId);
           if (!tsk || !tsk.enabled) continue; // 任务已删除/停用：丢弃贪睡
+          if (st.data.handled[s.occKey]) continue; // 该时刻已完成/已跳过：不再「稍后」重弹
           if (!tsk.overdueAlert) {
             fireReminder({ key: s.key, occKey: s.occKey, taskId: s.taskId, title: s.title, timeLabel: '稍后', type: 'task' });
           } else {
@@ -189,6 +205,7 @@ function bootstrap() {
       pomo.phase = 'idle';
       if (dnd) {
         log.info('pomodoro finished during dnd, dropped');
+        broadcast(); // 免打扰中没有弹窗广播，需显式同步组件里的番茄钟归零
       } else {
         fireReminder({
           key: 'pomo|' + phase + '|' + Date.now(), occKey: '', taskId: '',
@@ -228,7 +245,8 @@ function bootstrap() {
     }
   }
 
-  // 唤醒/启动后补弹今天错过的（策划书 3.3 / 4）；免打扰中跳过，关闭时统一补弹
+  // 唤醒/启动后补弹今天错过的（策划书 3.3 / 4）；免打扰中跳过，关闭时统一补弹。
+  // 每个任务只补最近错过的一条，避免间隔类任务唤醒后弹窗轰炸
   function sweepMissed() {
     if (st.data.settings.dndMode) return;
     const now = new Date();
@@ -237,11 +255,15 @@ function bootstrap() {
     for (const t of st.data.tasks) {
       if (!t.enabled) continue;
       if (t.overdueAlert) continue; // 霸屏任务由心跳广播接管，不补弹
+      let latest = null;
       for (const occ of S.occurrencesForDate(t, now)) {
-        if (occ >= cur) continue;
+        if (occ > cur) continue; // 只看已到点（含当前分钟，避免启动落在分钟尾段时该次提醒丢失）
         const key = S.occKey(t.id, dk, occ);
         if (st.data.handled[key]) continue;
-        fireReminder({ key, occKey: key, taskId: t.id, title: t.title, timeLabel: occ, type: 'task' });
+        latest = key;
+      }
+      if (latest) {
+        fireReminder({ key: latest, occKey: latest, taskId: t.id, title: t.title, timeLabel: latest.split('|')[2], type: 'task' });
       }
     }
   }
@@ -308,6 +330,7 @@ function bootstrap() {
       settings: st.data.settings,
       customTemplates: st.data.customTemplates,
       pomodoro: { phase: pomo.phase, endsAt: pomo.endsAt, totalSec: pomo.totalSec },
+      mini: miniMode, // 渲染进程崩溃重载后据此恢复迷你态
       version: app.getVersion(),
       recovered: recoveredInfo,
     };
@@ -407,13 +430,14 @@ function bootstrap() {
     reminderWin.loadFile(path.join(__dirname, 'renderer', 'reminder.html'));
     reminderWin.webContents.on('did-finish-load', () => {
       reminderReady = true;
-      if (pending.length) showReminderWindow(); // 补发创建期间错过的提醒事件
+      if (pending.length && !st.data.settings.dndMode) showReminderWindow(); // 补发创建期间错过的提醒事件（免打扰中保持隐藏）
     });
     reminderWin.webContents.on('render-process-gone', () => {
       log.error('reminder renderer gone, recreating');
+      if (reminderWin && !reminderWin.isDestroyed()) reminderWin.destroy(); // 先销毁空壳，避免残留不可交互窗口
       reminderWin = null;
       reminderReady = false;
-      if (pending.length) showReminderWindow();
+      if (pending.length && !st.data.settings.dndMode) showReminderWindow();
     });
     reminderWin.on('closed', () => { reminderWin = null; reminderReady = false; });
   }
@@ -429,7 +453,10 @@ function bootstrap() {
     reminderWin.setBounds({ width: 340, height: h });
     const wa = screen.getPrimaryDisplay().workArea;
     reminderWin.setPosition(wa.x + wa.width - 340 - 14, wa.y + wa.height - h - 14);
-    reminderWin.webContents.send('reminders', pending.map((p) => ({ key: p.key, type: p.type, title: p.title, timeLabel: p.timeLabel, pomoPhase: p.pomoPhase || null })));
+    reminderWin.webContents.send('reminders', {
+      list: pending.map((p) => ({ key: p.key, type: p.type, title: p.title, timeLabel: p.timeLabel, pomoPhase: p.pomoPhase || null })),
+      settings: st.data.settings, // 随推送刷新：贪睡档位/主题/音效即时生效
+    });
     if (!reminderWin.isVisible()) reminderWin.showInactive();
   }
 
@@ -512,8 +539,8 @@ function bootstrap() {
   }
 
   function setupIpc() {
-    const wrap = (fn) => (e, payload) => {
-      try { return fn(payload) ?? { ok: true }; }
+    const wrap = (fn) => async (e, payload) => {
+      try { return (await fn(payload)) ?? { ok: true }; }
       catch (err) { log.error('ipc: ' + err.message); return { ok: false, error: err.message }; }
     };
 
@@ -601,8 +628,9 @@ function bootstrap() {
       const occ = S.currentOccurrence(t, new Date());
       if (!occ) throw new Error('今天没有这个任务');
       const key = S.occKey(id, S.dateStr(new Date()), occ);
-      // 从待处理弹窗中同步移除
+      // 从待处理弹窗和贪睡排程中同步移除
       pending = pending.filter((p) => p.occKey !== key);
+      dropScheduledByOcc(key);
       completeOccurrence(key, id);
       hideReminderIfEmpty();
       broadcast();
@@ -616,6 +644,7 @@ function bootstrap() {
       const key = S.occKey(id, S.dateStr(new Date()), occ);
       st.data.handled[key] = 'skip';
       pending = pending.filter((p) => p.occKey !== key);
+      dropScheduledByOcc(key);
       hideReminderIfEmpty();
       st.scheduleSave();
       broadcast();
@@ -624,10 +653,14 @@ function bootstrap() {
     ipcMain.handle('task:snooze', wrap(({ id, minutes }) => {
       const t = st.data.tasks.find((x) => x.id === id);
       if (!t) throw new Error('任务不存在');
+      const now = new Date();
+      const occ = S.currentOccurrence(t, now);
+      if (!occ) return { ok: false, error: '今天没有这个任务' };
+      if (occ > S.hhmm(now)) return { ok: false, error: '任务还未到点，到点会自动提醒' };
+      const key = S.occKey(id, S.dateStr(now), occ);
+      if (st.data.handled[key]) return { ok: false, error: '本次已处理，无需再提醒' };
       const m = [5, 10, 15, 30].includes(minutes) ? minutes : st.data.settings.snoozeMinutes;
-      const occ = S.currentOccurrence(t, new Date());
-      const key = occ ? S.occKey(id, S.dateStr(new Date()), occ) + '|w' : S.occKey(id, S.dateStr(new Date()), t.time) + '|w';
-      scheduled.push({ key, occKey: key.replace('|w', ''), taskId: id, title: t.title, at: Date.now() + m * 60000 });
+      scheduled.push({ key: key + '|w', occKey: key, taskId: id, title: t.title, at: Date.now() + m * 60000 });
       broadcast(); // 霸屏页依赖新状态：贪睡后立即暂歇
       return { ok: true, minutes: m };
     }));
@@ -640,7 +673,7 @@ function bootstrap() {
         s.theme = patch.theme;
       }
       if (patch.opacity !== undefined) {
-        if (typeof patch.opacity !== 'number' || patch.opacity < 0.3 || patch.opacity > 1) throw new Error('透明度取值 0.3-1');
+        if (!Number.isFinite(patch.opacity) || patch.opacity < 0.3 || patch.opacity > 1) throw new Error('透明度取值 0.3-1');
         s.opacity = patch.opacity;
       }
       if (patch.pinned !== undefined) { s.pinned = !!patch.pinned; widget.setAlwaysOnTop(s.pinned, 'floating'); }

@@ -1,7 +1,7 @@
 {
   "name": "xiaodida",
   "productName": "小滴答",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "桌面每日提醒小程序：半透明常驻小组件 + 到点弹窗提醒",
   "main": "src/main.js",
   "author": "local",

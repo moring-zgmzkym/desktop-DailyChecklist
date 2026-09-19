@@ -168,6 +168,13 @@ class Store {
         const clean = sanitize(parsed);
         if (clean) {
           this.data = clean;
+          // 加载截断（非法条目/超上限）与导入的「宁可拒绝」不同，属可恢复损坏：记录日志便于排查
+          if (Array.isArray(parsed.tasks) && clean.tasks.length < parsed.tasks.length) {
+            this.log.error(`load: ${parsed.tasks.length - clean.tasks.length} tasks dropped (invalid or over limit)`);
+          }
+          if (Array.isArray(parsed.customTemplates) && clean.customTemplates.length < parsed.customTemplates.length) {
+            this.log.error(`load: ${parsed.customTemplates.length - clean.customTemplates.length} customTemplates dropped (invalid or over limit)`);
+          }
           recovered = { from: path.basename(candidate), fatal: false };
           break;
         }
@@ -185,7 +192,8 @@ class Store {
   }
 
   pruneHandled() {
-    const cutoff = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+    const d = new Date(Date.now() - 3 * 86400000);
+    const cutoff = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; // 本地日期，与键的日期段同时区
     for (const k of Object.keys(this.data.handled)) {
       const datePart = k.split('|')[1];
       if (datePart && datePart < cutoff) delete this.data.handled[k];
@@ -196,7 +204,12 @@ class Store {
     try {
       this.pruneHandled();
       fs.writeFileSync(this.tmp, JSON.stringify(this.data, null, 2));
-      if (fs.existsSync(this.file)) fs.renameSync(this.file, this.bak);
+      // 仅当现有主文件可解析（健康）时才轮换进 .bak：坏文件不顶掉好备份
+      if (fs.existsSync(this.file)) {
+        let healthy = false;
+        try { JSON.parse(fs.readFileSync(this.file, 'utf8')); healthy = true; } catch (_) { /* 保持现有 .bak */ }
+        if (healthy) fs.renameSync(this.file, this.bak);
+      }
       fs.renameSync(this.tmp, this.file);
     } catch (e) {
       this.log.error('saveNow failed: ' + e.message);

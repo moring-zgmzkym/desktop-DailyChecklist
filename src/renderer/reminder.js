@@ -61,14 +61,19 @@
     return card;
   }
 
-  api.onReminders((list) => {
-    current = list || [];
-    const fresh = current.some((x) => !seen.has(x.key));
-    for (const x of current) seen.add(x.key);
+  api.onReminders((payload) => {
+    const list = (payload && payload.list) || [];
+    if (payload && payload.settings) {
+      settings = payload.settings; // 每次推送都带最新设置：贪睡档位/主题/音效即时生效
+      rapp.dataset.theme = settings.theme;
+    }
+    current = list;
+    const fresh = list.some((x) => !seen.has(x.key));
+    for (const x of list) seen.add(x.key);
     if (fresh && settings.sound) SoundKit.play('remind', settings.soundPack, true);
     const box = $('rcards');
     box.textContent = '';
-    for (const item of current) box.appendChild(buildCard(item));
+    for (const item of list) box.appendChild(buildCard(item));
     if (seen.size > 200) seen.clear();
   });
 })();
